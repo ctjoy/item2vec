@@ -11,7 +11,6 @@ import argparse
 import pandas as pd
 from itertools import combinations
 from collections import deque
-import ast
 
 parser = argparse.ArgumentParser()
 
@@ -24,7 +23,7 @@ parser.add_argument('--epochs', type=int, default=1,
 parser.add_argument('--embedding_size', type=int, default=30,
                     help='The embedding dimension size.')
 
-parser.add_argument('--batch_size', type=int, default=16,
+parser.add_argument('--batch_size', type=int, default=256,
                     help='Number of examples per batch.')
 
 parser.add_argument('--learning_rate', type=float, default=0.2,
@@ -35,43 +34,57 @@ parser.add_argument('--num_negatives', type=int, default=100,
 
 class BatchGenerator(object):
 
-    def __init__(self, batch_size):
+    def __init__(self, batch_size, items, item_ix):
         self.batch_size = batch_size
-        self.data = pd.read_csv(FLAGS.train_file, names=['items'])
+        self.data = items
         self.ix = 0
+        self.item_ix_reverse = {v: i for i, v in enumerate(item_ix)}
         self.buffer = deque([])
+        self.finish = False
 
     def next(self):
 
+        if self.finish:
+            return 'No data!'
+
         while len(self.buffer) < self.batch_size:
-            items = self.data.iloc[self.ix]['items']
-            items_list = ast.literal_eval(items)
+            items_list = self.data.iloc[self.ix]
             self.buffer.extend(combinations(items_list, 2))
 
             if self.ix == self.data.shape[0] - 1:
-                self.ix = 0
+                self.finish = True
             else:
                 self.ix += 1
 
         d = [self.buffer.popleft() for _ in range(self.batch_size)]
-        d = np.array([list(i) for i in d])
+        d = np.array([[self.item_ix_reverse[i[0]], self.item_ix_reverse[i[1]]] for i in d])
         batch = d[:, 0]
         labels = d[:, 1]
 
         return batch , labels
 
+    def check_finish(self):
+        return self.finish
+
+    def resume(self):
+        self.ix = 0
+        self.finish = False
+
+    def get_current(self):
+        return (self.ix / self.data.shape[0]) * 100
+
 class Item2Vec(object):
 
-    def __init__(self, session, item_counts, vocab_size):
+    def __init__(self, session, items, item_counts, vocab_size, item_ix):
         self.vocab_size = vocab_size
         self.embed_dim = FLAGS.embedding_size
         self.num_negatives = FLAGS.num_negatives
         self.learning_rate = FLAGS.learning_rate
         self.batch_size = FLAGS.batch_size
-        self.num_steps = 100
+        # self.num_steps = 10000
 
         self.item_counts = item_counts
-        self.generator = BatchGenerator(FLAGS.batch_size)
+        self.generator = BatchGenerator(FLAGS.batch_size, items, item_ix)
 
         self.session = session
         self._init_graphs()
@@ -82,9 +95,11 @@ class Item2Vec(object):
         true_logits, sampled_logits = self.forward(self.batch,
                                                    self.labels)
         self.loss = self.nce_loss(true_logits, sampled_logits)
+        tf.summary.scalar("NCE_loss", self.loss)
         self.train_op = self.optimize(self.loss)
 
         tf.global_variables_initializer().run()
+        # self.saver = tf.train.Saver()
 
     def forward(self, batch, labels):
 
@@ -148,28 +163,49 @@ class Item2Vec(object):
         return nce_loss_tensor
 
     def optimize(self, loss):
+        global_step = tf.Variable(0, name="global_step")
+        self.global_step = global_step
         optimizer = tf.train.GradientDescentOptimizer(self.learning_rate)
-        train_op = optimizer.minimize(loss)
+        train_op = optimizer.minimize(loss,
+                                      global_step=self.global_step)
 
         return train_op
 
     def train(self):
-        for step in range(self.num_steps):
+        avg_loss = 0
+        step = 0
+        while not self.generator.check_finish():
             batch, labels = self.generator.next()
             feed_dict = {self.batch: batch, self.labels: labels}
             _, loss_val = self.session.run([self.train_op, self.loss],
                                            feed_dict=feed_dict)
+            avg_loss += loss_val
+            step += 1
+            if step % 1000 == 0:
+                print('{:.2f} %'.format(self.generator.get_current()))
+                print(loss_val)
+                print('-'*10)
+
+        print(avg_loss)
+        self.generator.resume()
 
 def main(unused_argv):
 
+    min_rating = 4
     ratings = pd.read_csv('../data/ml-20m/ratings.csv')
-    item_counts = list(ratings.movieId.value_counts().sort_index())
+    positive = ratings[ratings.rating >= min_rating]
+    items = positive.groupby('userId')['movieId'].apply(list).reset_index(drop=True)
+    item_counts = list(positive.movieId.value_counts().sort_index())
     print(len(item_counts))
-    vocab_size = int(ratings.movieId.max())
+    movies_ix = list(positive.movieId.unique())
+    vocab_size = len(movies_ix)
 
+    # g = BatchGenerator(FLAGS.train_file, FLAGS.batch_size, movies_ix)
+    # for i in range(1):
+    #     print(g.next())
     with tf.Graph().as_default(), tf.Session() as session:
         with tf.device("/cpu:0"):
-            model = Item2Vec(session, item_counts, vocab_size)
+            model = Item2Vec(session, items, item_counts, vocab_size, movies_ix)
 
         for _ in range(FLAGS.epochs):
             model.train() # Process one epoch
