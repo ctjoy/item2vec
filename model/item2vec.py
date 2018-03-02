@@ -95,7 +95,7 @@ class Item2Vec(object):
         true_logits, sampled_logits = self.forward(self.batch,
                                                    self.labels)
         self.loss = self.nce_loss(true_logits, sampled_logits)
-        tf.summary.scalar("NCE_loss", self.loss)
+        # tf.summary.scalar("NCE_loss", self.loss)
         self.train_op = self.optimize(self.loss)
 
         tf.global_variables_initializer().run()
@@ -104,9 +104,10 @@ class Item2Vec(object):
     def forward(self, batch, labels):
 
         init_width = 0.5 / self.embed_dim
-        emb = tf.Variable(tf.random_uniform([self.vocab_size, self.embed_dim],
+        embed = tf.Variable(tf.random_uniform([self.vocab_size, self.embed_dim],
                                             -init_width, init_width))
-        self.emb = emb
+        self.embed = embed
+        self.embed_norms = tf.nn.l2_normalize(embed, 1)
 
         softmax_w = tf.Variable(tf.zeros([self.vocab_size, self.embed_dim]),
                                 name="softmax_weights")
@@ -127,7 +128,7 @@ class Item2Vec(object):
                 unigrams=self.item_counts)
 
         # Embeddings for examples: [batch_size, embed_dim]
-        example_emb = tf.nn.embedding_lookup(emb, batch)
+        example_emb = tf.nn.embedding_lookup(embed, batch)
 
         # Weights for labels: [batch_size, embed_dim]
         true_w = tf.nn.embedding_lookup(softmax_w, labels)
@@ -171,6 +172,17 @@ class Item2Vec(object):
 
         return train_op
 
+    def get_factors(self):
+        return self.embed.eval()
+
+    def similar_items(self, itemid, N=10):
+        item_factors = self.embed.eval()
+        item_norms = self.embed_norms.eval()
+
+        scores = item_factors.dot(item_factors[itemid]) / item_norms
+        best = np.argpartition(scores, -N)[-N:]
+        return sorted(zip(best, scores[best] / item_norms[itemid]), key=lambda x: -x[1])
+
     def train(self):
         avg_loss = 0
         step = 0
@@ -184,6 +196,7 @@ class Item2Vec(object):
             if step % 1000 == 0:
                 print('{:.2f} %'.format(self.generator.get_current()))
                 print(loss_val)
+                print(self.similar_items(1))
                 print('-'*10)
 
         print(avg_loss)
@@ -200,9 +213,6 @@ def main(unused_argv):
     movies_ix = list(positive.movieId.unique())
     vocab_size = len(movies_ix)
 
-    # g = BatchGenerator(FLAGS.train_file, FLAGS.batch_size, movies_ix)
-    # for i in range(1):
-    #     print(g.next())
     with tf.Graph().as_default(), tf.Session() as session:
         with tf.device("/cpu:0"):
             model = Item2Vec(session, items, item_counts, vocab_size, movies_ix)
