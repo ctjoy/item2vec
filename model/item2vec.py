@@ -84,6 +84,7 @@ class Item2Vec(object):
         # self.num_steps = 10000
 
         self.item_counts = item_counts
+        self.item_ix_reverse = {v: i for i, v in enumerate(item_ix)}
         self.generator = BatchGenerator(FLAGS.batch_size, items, item_ix)
 
         self.session = session
@@ -107,7 +108,6 @@ class Item2Vec(object):
         embed = tf.Variable(tf.random_uniform([self.vocab_size, self.embed_dim],
                                             -init_width, init_width))
         self.embed = embed
-        self.embed_norms = tf.nn.l2_normalize(embed, 1)
 
         softmax_w = tf.Variable(tf.zeros([self.vocab_size, self.embed_dim]),
                                 name="softmax_weights")
@@ -177,7 +177,8 @@ class Item2Vec(object):
 
     def similar_items(self, itemid, N=10):
         item_factors = self.embed.eval()
-        item_norms = self.embed_norms.eval()
+        item_norms = np.linalg.norm(item_factors, axis=-1)
+        item_norms[item_norms == 0] = 1e-10
 
         scores = item_factors.dot(item_factors[itemid]) / item_norms
         best = np.argpartition(scores, -N)[-N:]
@@ -196,7 +197,8 @@ class Item2Vec(object):
             if step % 1000 == 0:
                 print('{:.2f} %'.format(self.generator.get_current()))
                 print(loss_val)
-                print(self.similar_items(1))
+                for i, score in self.similar_items(1):
+                    print(i, score)
                 print('-'*10)
 
         print(avg_loss)
@@ -211,6 +213,7 @@ def main(unused_argv):
     item_counts = list(positive.movieId.value_counts().sort_index())
     print(len(item_counts))
     movies_ix = list(positive.movieId.unique())
+    movies_ix_reverse = {v: i for i, v in enumerate(movies_ix)}
     vocab_size = len(movies_ix)
 
     with tf.Graph().as_default(), tf.Session() as session:
