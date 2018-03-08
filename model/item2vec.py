@@ -83,8 +83,8 @@ class Item2Vec(object):
         self.batch_size = FLAGS.batch_size
         # self.num_steps = 10000
 
+        self.item_ix = item_ix
         self.item_counts = item_counts
-        self.item_ix_reverse = {v: i for i, v in enumerate(item_ix)}
         self.generator = BatchGenerator(FLAGS.batch_size, items, item_ix)
 
         self.session = session
@@ -184,7 +184,10 @@ class Item2Vec(object):
         best = np.argpartition(scores, -N)[-N:]
         return sorted(zip(best, scores[best] / item_norms[itemid]), key=lambda x: -x[1])
 
-    def train(self):
+    def train(self, movies):
+        # add for evaluation
+        movies.index = movies.movieId
+
         avg_loss = 0
         step = 0
         while not self.generator.check_finish():
@@ -197,8 +200,8 @@ class Item2Vec(object):
             if step % 1000 == 0:
                 print('{:.2f} %'.format(self.generator.get_current()))
                 print(loss_val)
-                for i, score in self.similar_items(1):
-                    print(i, score)
+                for i, score in self.similar_items(125):
+                    print(movies.loc[self.item_ix[i]].title, score)
                 print('-'*10)
 
         print(avg_loss)
@@ -208,20 +211,20 @@ def main(unused_argv):
 
     min_rating = 4
     ratings = pd.read_csv('../data/ml-20m/ratings.csv')
+    movies = pd.read_csv('../data/ml-20m/movies.csv')
     positive = ratings[ratings.rating >= min_rating]
     items = positive.groupby('userId')['movieId'].apply(list).reset_index(drop=True)
     item_counts = list(positive.movieId.value_counts().sort_index())
-    print(len(item_counts))
-    movies_ix = list(positive.movieId.unique())
-    movies_ix_reverse = {v: i for i, v in enumerate(movies_ix)}
-    vocab_size = len(movies_ix)
+    movieId_list = list(positive.movieId.unique())
+    movieId_to_ix = {v: i for i, v in enumerate(movieId_list)}
+    vocab_size = len(movieId_list)
 
     with tf.Graph().as_default(), tf.Session() as session:
         with tf.device("/cpu:0"):
-            model = Item2Vec(session, items, item_counts, vocab_size, movies_ix)
+            model = Item2Vec(session, items, item_counts, vocab_size, movieId_list)
 
         for _ in range(FLAGS.epochs):
-            model.train() # Process one epoch
+            model.train(movies) # Process one epoch
 
 if __name__ == '__main__':
     tf.logging.set_verbosity(tf.logging.INFO)
