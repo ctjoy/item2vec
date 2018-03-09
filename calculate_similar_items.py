@@ -13,7 +13,7 @@ logging.basicConfig(level=logging.INFO)
 logging.info('Start ... ')
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--data', type=str, help='Where you put your data?',
+parser.add_argument('--data', type=str, help='Where did you put your data?',
                     default='./data/cut.csv')
                     # required=True)
 
