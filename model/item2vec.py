@@ -6,45 +6,29 @@ from __future__ import print_function
 import numpy as np
 import tensorflow as tf
 
-import sys
-import argparse
-import pandas as pd
 from itertools import combinations
 from collections import deque
 
-parser = argparse.ArgumentParser()
+class Options(object):
 
-parser.add_argument('--train_file', type=str, default='../test.csv',
-                    help='Training text file.')
-
-parser.add_argument('--epochs', type=int, default=1,
-                    help='Number of training epochs.')
-
-parser.add_argument('--embedding_size', type=int, default=30,
-                    help='The embedding dimension size.')
-
-parser.add_argument('--batch_size', type=int, default=256,
-                    help='Number of examples per batch.')
-
-parser.add_argument('--learning_rate', type=float, default=0.2,
-                    help='Initial learning rate.')
-
-parser.add_argument('--num_negatives', type=int, default=100,
-                    help='Negative samples per training example.')
+    def __init__(self, embedding_size, batch_size, learning_rate, num_negatives):
+        self.embedding_size = embedding_size
+        self.batch_size = batch_size
+        self.learning_rate = learning_rate
+        self.num_negatives = num_negatives
 
 class BatchGenerator(object):
 
-    def __init__(self, batch_size, items, item_ix):
+    def __init__(self, batch_size, data):
         self.batch_size = batch_size
-        self.data = items
+        self.data = data
         self.ix = 0
-        self.item_ix_reverse = {v: i for i, v in enumerate(item_ix)}
         self.buffer = deque([])
-        self.finish = False
+        self._finish = False
 
     def next(self):
 
-        if self.finish:
+        if self._finish:
             return 'No data!'
 
         while len(self.buffer) < self.batch_size:
@@ -52,40 +36,42 @@ class BatchGenerator(object):
             self.buffer.extend(combinations(items_list, 2))
 
             if self.ix == self.data.shape[0] - 1:
-                self.finish = True
+                self._finish = True
             else:
                 self.ix += 1
 
         d = [self.buffer.popleft() for _ in range(self.batch_size)]
-        d = np.array([[self.item_ix_reverse[i[0]], self.item_ix_reverse[i[1]]] for i in d])
+        d = np.array([[i[0], i[1]] for i in d])
         batch = d[:, 0]
         labels = d[:, 1]
 
         return batch , labels
 
-    def check_finish(self):
-        return self.finish
+    @property
+    def finish(self):
+        return self._finish
 
     def resume(self):
         self.ix = 0
-        self.finish = False
+        self._finish = False
 
-    def get_current(self):
+    @property
+    def current_percentage(self):
         return (self.ix / self.data.shape[0]) * 100
 
 class Item2Vec(object):
 
-    def __init__(self, session, items, item_counts, vocab_size, item_ix):
-        self.vocab_size = vocab_size
-        self.embed_dim = FLAGS.embedding_size
-        self.num_negatives = FLAGS.num_negatives
-        self.learning_rate = FLAGS.learning_rate
-        self.batch_size = FLAGS.batch_size
-        # self.num_steps = 10000
+    def __init__(self, session, opts, processor):
+        self.vocab_size = len(processor.word_list)
+        self.embed_dim = opts.embedding_size
+        self.num_negatives = opts.num_negatives
+        self.learning_rate = opts.learning_rate
+        self.batch_size = opts.batch_size
 
-        self.item_ix = item_ix
-        self.item_counts = item_counts
-        self.generator = BatchGenerator(FLAGS.batch_size, items, item_ix)
+        self.item_counts = processor.word_counts
+        self.generator = BatchGenerator(opts.batch_size,
+                                        processor.clean_data)
+        self.processor = processor
 
         self.session = session
         self._init_graphs()
@@ -96,11 +82,9 @@ class Item2Vec(object):
         true_logits, sampled_logits = self.forward(self.batch,
                                                    self.labels)
         self.loss = self.nce_loss(true_logits, sampled_logits)
-        # tf.summary.scalar("NCE_loss", self.loss)
         self.train_op = self.optimize(self.loss)
 
         tf.global_variables_initializer().run()
-        # self.saver = tf.train.Saver()
 
     def forward(self, batch, labels):
 
@@ -172,61 +156,35 @@ class Item2Vec(object):
 
         return train_op
 
-    def get_factors(self):
+    @property
+    def embeddings(self):
         return self.embed.eval()
 
+    def get_norms(self):
+        norms = np.linalg.norm(self.embeddings, axis=-1)
+        norms[norms == 0] = 1e-10
+        return norms
+
     def similar_items(self, itemid, N=10):
-        item_factors = self.embed.eval()
-        item_norms = np.linalg.norm(item_factors, axis=-1)
-        item_norms[item_norms == 0] = 1e-10
-
-        scores = item_factors.dot(item_factors[itemid]) / item_norms
+        norms = self.get_norms()
+        scores = self.embeddings.dot(self.embeddings[itemid]) / norms
         best = np.argpartition(scores, -N)[-N:]
-        return sorted(zip(best, scores[best] / item_norms[itemid]), key=lambda x: -x[1])
+        return sorted(zip(best, scores[best] / norms[itemid]), key=lambda x: -x[1])
 
-    def train(self, movies):
-        # add for evaluation
-        movies.index = movies.movieId
-
+    def train(self):
         avg_loss = 0
-        step = 0
-        while not self.generator.check_finish():
+        while not self.generator.finish:
             batch, labels = self.generator.next()
             feed_dict = {self.batch: batch, self.labels: labels}
             _, loss_val = self.session.run([self.train_op, self.loss],
                                            feed_dict=feed_dict)
             avg_loss += loss_val
-            step += 1
-            if step % 1000 == 0:
-                print('{:.2f} %'.format(self.generator.get_current()))
-                print(loss_val)
-                for i, score in self.similar_items(125):
-                    print(movies.loc[self.item_ix[i]].title, score)
-                print('-'*10)
 
-        print(avg_loss)
+        print("Cost: ", '{:.9f}'.format(avg_loss))
         self.generator.resume()
 
-def main(unused_argv):
-
-    min_rating = 4
-    ratings = pd.read_csv('../data/ml-20m/ratings.csv')
-    movies = pd.read_csv('../data/ml-20m/movies.csv')
-    positive = ratings[ratings.rating >= min_rating]
-    items = positive.groupby('userId')['movieId'].apply(list).reset_index(drop=True)
-    item_counts = list(positive.movieId.value_counts().sort_index())
-    movieId_list = list(positive.movieId.unique())
-    movieId_to_ix = {v: i for i, v in enumerate(movieId_list)}
-    vocab_size = len(movieId_list)
-
-    with tf.Graph().as_default(), tf.Session() as session:
-        with tf.device("/cpu:0"):
-            model = Item2Vec(session, items, item_counts, vocab_size, movieId_list)
-
-        for _ in range(FLAGS.epochs):
-            model.train(movies) # Process one epoch
-
-if __name__ == '__main__':
-    tf.logging.set_verbosity(tf.logging.INFO)
-    FLAGS, unparsed = parser.parse_known_args()
-    tf.app.run(main=main, argv=[sys.argv[0]] + unparsed)
+    def evaluate(self, word):
+        ix = self.processor.word_to_ix[word]
+        for i, score in self.similar_items(ix):
+            print(self.processor.word_list[i], score)
+        print('-'*10)
