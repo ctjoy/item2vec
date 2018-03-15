@@ -10,9 +10,9 @@ class ItemNameProcessor(object):
 
     def __init__(self, data, name_col):
         self.data_name = data[name_col]
-        self.data_cut = self.cut_name(data[name_col])
+        # self.data_cut = self.cut_name(data[name_col])
         # pd.concat([self.data_name, self.data_cut], axis=1).to_csv('./data/cut.csv', index=False)
-        # self.data_cut = data['cut'].fillna('')
+        self.data_cut = data['cut'].fillna('')
         self.word_dict = self.get_word_dict()
 
         self.word_list = list(self.word_dict.keys())
