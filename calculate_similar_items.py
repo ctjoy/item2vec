@@ -17,7 +17,10 @@ parser.add_argument('--data', type=str, help='Where did you put your data?',
                     default='./data/cut.csv')
                     # required=True)
 
-parser.add_argument('--epochs', type=int, default=50,
+parser.add_argument('--save_path', type=str, help='The path you want to save your model.',
+                    default='./result/model/')
+
+parser.add_argument('--epochs', type=int, default=5,
                     help='Number of training epochs.')
 
 parser.add_argument('--embedding_size', type=int, default=30,
@@ -43,7 +46,8 @@ processor = ItemNameProcessor(data, name_col='name')
 opts = Options(args.embedding_size,
                args.batch_size,
                args.learning_rate,
-               args.num_negatives)
+               args.num_negatives,
+               args.save_path)
 
 with tf.Graph().as_default(), tf.Session() as session:
     with tf.device("/cpu:0"):

@@ -3,6 +3,8 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import os
+import shutil
 import numpy as np
 import tensorflow as tf
 
@@ -11,11 +13,13 @@ from collections import deque
 
 class Options(object):
 
-    def __init__(self, embedding_size, batch_size, learning_rate, num_negatives):
+    def __init__(self, embedding_size, batch_size,
+                 learning_rate, num_negatives, save_path):
         self.embedding_size = embedding_size
         self.batch_size = batch_size
         self.learning_rate = learning_rate
         self.num_negatives = num_negatives
+        self.save_path = save_path
 
 class BatchGenerator(object):
 
@@ -67,6 +71,14 @@ class Item2Vec(object):
         self.num_negatives = opts.num_negatives
         self.learning_rate = opts.learning_rate
         self.batch_size = opts.batch_size
+        self.save_path = opts.save_path
+        self.step = 0
+
+        if not os.path.exists(self.save_path):
+            os.makedirs(self.save_path)
+
+        # Clean up the model directory if present
+        shutil.rmtree(self.save_path, ignore_errors=False)
 
         self.item_counts = processor.word_counts
         self.generator = BatchGenerator(opts.batch_size,
@@ -85,6 +97,10 @@ class Item2Vec(object):
         self.train_op = self.optimize(self.loss)
 
         tf.global_variables_initializer().run()
+
+        self.saver = tf.train.Saver()
+        self.summary_writer = tf.summary.FileWriter(self.save_path,
+                                                    graph=tf.get_default_graph())
 
     def forward(self, batch, labels):
 
@@ -148,11 +164,11 @@ class Item2Vec(object):
         return nce_loss_tensor
 
     def optimize(self, loss):
-        global_step = tf.Variable(0, name="global_step")
-        self.global_step = global_step
         optimizer = tf.train.GradientDescentOptimizer(self.learning_rate)
-        train_op = optimizer.minimize(loss,
-                                      global_step=self.global_step)
+        train_op = optimizer.minimize(loss)
+
+        tf.summary.scalar("loss", loss)
+        self.summary_op = tf.summary.merge_all()
 
         return train_op
 
@@ -176,12 +192,19 @@ class Item2Vec(object):
         while not self.generator.finish:
             batch, labels = self.generator.next()
             feed_dict = {self.batch: batch, self.labels: labels}
-            _, loss_val = self.session.run([self.train_op, self.loss],
+            _, loss_val, summary = self.session.run([self.train_op, self.loss, self.summary_op],
                                            feed_dict=feed_dict)
+
+            self.summary_writer.add_summary(summary, self.step)
+
             avg_loss += loss_val
+            self.step += 1
 
         print("Cost: ", '{:.9f}'.format(avg_loss))
         self.generator.resume()
+        self.saver.save(self.session,
+                        os.path.join(self.save_path, "model.ckpt"),
+                        global_step=self.step)
 
     def evaluate(self, word):
         ix = self.processor.word_to_ix[word]
