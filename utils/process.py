@@ -20,6 +20,12 @@ class ItemNameProcessor(object):
 
         self.clean_data = self.map_to_ix()
 
+    def generate_word_meta(self, path):
+        pd.DataFrame(self.word_list).to_csv(path, index=False, sep='\t', header=False)
+
+    def generate_item_meta(self, path):
+        self.data_name.to_csv(path, index=False, sep='\t', header=False)
+
     def cut_name(self, name):
 
         def rm_short(row):
@@ -65,7 +71,7 @@ class ItemNameProcessor(object):
             else:
                 factors.append(list(np.mean(embeddings[i], axis=0)))
 
-        self.factors = np.array(factors)
+        return np.array(factors)
 
     def get_norms(self):
         self.norms = np.linalg.norm(self.factors, axis=-1)
@@ -77,7 +83,7 @@ class ItemNameProcessor(object):
         return sorted(zip(best, scores[best] / self.norms[itemid]), key=lambda x: -x[1])
 
     def print_similar_items(self, embeddings, itemid, N=10):
-        self.get_factors(embeddings)
+        self.factors = self.get_factors(embeddings)
         self.get_norms()
 
         for i, score in self.similar_items(itemid, N):

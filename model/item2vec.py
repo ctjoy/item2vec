@@ -7,6 +7,7 @@ import os
 import shutil
 import numpy as np
 import tensorflow as tf
+from tensorflow.contrib.tensorboard.plugins import projector
 
 from itertools import combinations
 from collections import deque
@@ -74,16 +75,25 @@ class Item2Vec(object):
         self.save_path = opts.save_path
         self.step = 0
 
+        # Clean up the model directory if present
+        if os.path.exists(self.save_path):
+            shutil.rmtree(self.save_path, ignore_errors=False)
+
         if not os.path.exists(self.save_path):
             os.makedirs(self.save_path)
-
-        # Clean up the model directory if present
-        shutil.rmtree(self.save_path, ignore_errors=False)
 
         self.item_counts = processor.word_counts
         self.generator = BatchGenerator(opts.batch_size,
                                         processor.clean_data)
         self.processor = processor
+        meta_path = os.path.join(self.save_path, 'word_metadata.tsv')
+        self.processor.generate_word_meta(meta_path)
+
+        self.projector_config = projector.ProjectorConfig()
+        pro_embed = self.projector_config.embeddings.add()
+        pro_embed.tensor_name = 'word_embedding'
+        # Link this tensor to its metadata file (e.g. labels).
+        pro_embed.metadata_path = 'word_metadata.tsv'
 
         self.session = session
         self._init_graphs()
@@ -102,11 +112,14 @@ class Item2Vec(object):
         self.summary_writer = tf.summary.FileWriter(self.save_path,
                                                     graph=tf.get_default_graph())
 
+        projector.visualize_embeddings(self.summary_writer, self.projector_config)
+
     def forward(self, batch, labels):
 
         init_width = 0.5 / self.embed_dim
         embed = tf.Variable(tf.random_uniform([self.vocab_size, self.embed_dim],
-                                            -init_width, init_width))
+                                            -init_width, init_width),
+                            name='word_embedding')
         self.embed = embed
 
         softmax_w = tf.Variable(tf.zeros([self.vocab_size, self.embed_dim]),
