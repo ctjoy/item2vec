@@ -4,6 +4,7 @@ import os
 import shutil
 import argparse
 import logging
+import joblib
 import numpy as np
 import pandas as pd
 
@@ -18,16 +19,16 @@ logging.info('Start ... ')
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--data', type=str, help='Where did you put your data?',
-                    default='./data/cut.csv')
+                    default='./data/for_item2vec.csv')
                     # required=True)
 
 parser.add_argument('--save_path', type=str, help='The path you want to save your model.',
-                    default='./result/model/')
+                    default='./result/word/')
 
 parser.add_argument('--save_project_path', type=str, help='The path you want to save your projected factors.',
-                    default='./result/project/')
+                    default='./result/item/')
 
-parser.add_argument('--epochs', type=int, default=50,
+parser.add_argument('--epochs', type=int, default=30,
                     help='Number of training epochs.')
 
 parser.add_argument('--embedding_size', type=int, default=30,
@@ -66,14 +67,17 @@ with tf.Graph().as_default(), tf.Session() as session:
 
         if (epoch + 1) % 5 == 0:
             embeds = model.embeddings
-            processor.print_similar_items(embeds, 9, N=10)
+            processor.print_similar(embeds, 9, N=10)
 
         print('Finish {} epoch!'.format(epoch + 1))
         print('-'*10)
 
     embeds = model.embeddings
-    processor.print_similar_items(embeds, 4839, N=10)
-    processor.print_similar_items(embeds, 500, N=10)
+    processor.print_similar(embeds, 4839, N=10)
+    processor.print_similar(embeds, 500, N=10)
+
+    joblib.dump(embeds, os.path.join(args.save_path, 'word_embeds.pkl'))
+    joblib.dump(processor, os.path.join(args.save_path, 'processor.pkl'))
 
 with tf.Graph().as_default(), tf.Session() as session:
     with tf.device("/cpu:0"):
@@ -91,7 +95,8 @@ with tf.Graph().as_default(), tf.Session() as session:
         factors = tf.Variable(f_tf, name="item_embedding")
 
         meta_path = os.path.join(args.save_project_path, 'item_metadata.tsv')
-        processor.generate_item_meta(meta_path)
+        meta_data = processor.get_item_meta()
+        meta_data.to_csv(meta_path, sep='\t')
 
         saver = tf.train.Saver([factors])
 

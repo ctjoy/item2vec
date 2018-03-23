@@ -9,6 +9,7 @@ from collections import Counter, OrderedDict
 class ItemNameProcessor(object):
 
     def __init__(self, data, name_col):
+        self.data = data
         self.data_name = data[name_col]
         # self.data_cut = self.cut_name(data[name_col])
         # pd.concat([self.data_name, self.data_cut], axis=1).to_csv('./data/cut.csv', index=False)
@@ -20,11 +21,11 @@ class ItemNameProcessor(object):
 
         self.clean_data = self.map_to_ix()
 
-    def generate_word_meta(self, path):
-        pd.DataFrame(self.word_list).to_csv(path, index=False, sep='\t', header=False)
+    def get_word_meta(self):
+        return pd.DataFrame(self.word_list, columns=['word']).reset_index()
 
-    def generate_item_meta(self, path):
-        self.data_name.to_csv(path, index=False, sep='\t', header=False)
+    def get_item_meta(self):
+        return self.data.drop(['id'], axis=1).reset_index()
 
     def cut_name(self, name):
 
@@ -50,7 +51,7 @@ class ItemNameProcessor(object):
         total_words = self.data_cut.str.cat(sep='::::').split('::::')
         counter = Counter(total_words).most_common(len(total_words))
 
-        return OrderedDict(sorted(filter(lambda v: v[1] > 5, counter), reverse=True, key=lambda v: v[1]))
+        return OrderedDict(sorted(filter(lambda v: v[1] > 5 and v[0] != '', counter), reverse=True, key=lambda v: v[1]))
 
     def map_to_ix(self):
         word_to_ix = dict(zip(self.word_list, range(len(self.word_list))))
@@ -73,19 +74,27 @@ class ItemNameProcessor(object):
 
         return np.array(factors)
 
-    def get_norms(self):
-        self.norms = np.linalg.norm(self.factors, axis=-1)
-        self.norms[self.norms == 0] = 1e-10
+    def get_norms(self, e):
+        norms = np.linalg.norm(e, axis=-1)
+        norms[norms == 0] = 1e-10
+        return norms
 
-    def similar_items(self, itemid, N):
-        scores = self.factors.dot(self.factors[itemid]) / self.norms
+    def get_similar(self, embeddings, queryid, norms, N):
+        scores = embeddings.dot(embeddings[queryid]) / norms
         best = np.argpartition(scores, -N)[-N:]
-        return sorted(zip(best, scores[best] / self.norms[itemid]), key=lambda x: -x[1])
+        return sorted(zip(best, scores[best] / norms[queryid]), key=lambda x: -x[1])
 
-    def print_similar_items(self, embeddings, itemid, N=10):
-        self.factors = self.get_factors(embeddings)
-        self.get_norms()
+    def print_similar(self, embeddings, queyid, N=10, is_item=True):
 
-        for i, score in self.similar_items(itemid, N):
-            print(self.data_name.iloc[i], score)
+        if is_item:
+            e = self.get_factors(embeddings)
+        else:
+            e = embeddings
+        norms = self.get_norms(e)
+
+        for i, score in self.get_similar(e, queyid, norms, N):
+            if is_item:
+                print(self.data_name.iloc[i], score)
+            else:
+                print(self.word_list[i], score)
         print('-'*10)

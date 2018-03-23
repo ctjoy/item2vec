@@ -1,2 +1,0 @@
-model_checkpoint_path: "factors.ckpt"
-all_model_checkpoint_paths: "factors.ckpt"
