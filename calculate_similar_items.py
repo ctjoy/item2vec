@@ -96,7 +96,7 @@ with tf.Graph().as_default(), tf.Session() as session:
 
         meta_path = os.path.join(args.save_project_path, 'item_metadata.tsv')
         meta_data = processor.get_item_meta()
-        meta_data.to_csv(meta_path, sep='\t')
+        meta_data.to_csv(meta_path, sep='\t', index=False)
 
         saver = tf.train.Saver([factors])
 

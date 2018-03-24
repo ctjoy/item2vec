@@ -89,7 +89,7 @@ class Item2Vec(object):
         meta_path = os.path.join(self.save_path, 'word_metadata.tsv')
         # self.processor.generate_word_meta(meta_path)
         meta_data = self.processor.get_word_meta()
-        meta_data.to_csv(meta_path, sep='\t', header=False)
+        meta_data.to_csv(meta_path, sep='\t', index=False)
 
         self.projector_config = projector.ProjectorConfig()
         pro_embed = self.projector_config.embeddings.add()
