@@ -11,9 +11,7 @@ class ItemNameProcessor(object):
     def __init__(self, data, name_col):
         self.data = data
         self.data_name = data[name_col]
-        # self.data_cut = self.cut_name(data[name_col])
-        # pd.concat([self.data_name, self.data_cut], axis=1).to_csv('./data/cut.csv', index=False)
-        self.data_cut = data['cut'].fillna('')
+        self.data_cut = self.cut_name(data[name_col])
         self.word_dict = self.get_word_dict()
 
         self.word_list = list(self.word_dict.keys())
@@ -25,7 +23,7 @@ class ItemNameProcessor(object):
         return pd.DataFrame(self.word_list, columns=['word']).reset_index()
 
     def get_item_meta(self):
-        return self.data.drop(['id'], axis=1).reset_index()
+        return self.data.reset_index()
 
     def cut_name(self, name):
 

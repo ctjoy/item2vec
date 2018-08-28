@@ -19,8 +19,7 @@ logging.info('Start ... ')
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--data', type=str, help='Where did you put your data?',
-                    default='./data/for_item2vec.csv')
-                    # required=True)
+                    required=True)
 
 parser.add_argument('--save_path', type=str, help='The path you want to save your model.',
                     default='./result/word/')
