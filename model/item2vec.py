@@ -42,6 +42,7 @@ class BatchGenerator(object):
 
             if self.ix == self.data.shape[0] - 1:
                 self._finish = True
+                self.ix = 0
             else:
                 self.ix += 1
 
