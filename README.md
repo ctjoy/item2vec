@@ -1,25 +1,29 @@
 # Item2vec
 Implement item2vec algorithm. I use the item name data from Ruten website.
 
-<p align="center">
-  <img src="images/item2vec-word.png" width="80%" />
-</p>
-
-<p align="center">
-  <img src="images/item2vec-item.png" width="80%" />
-</p>
-
 ## Usage
 
 ```
-# Start training
+# start training
 python calculate_similar_items.py --data data/data.csv
 
-# Start tensorboard to see the visualization 
-tensorboard --logdir=result/word/ 
+# start tensorboard to see the visualization
+tensorboard --logdir=result/word/
 # or
-tensorboard --logdir=result/item/ 
+tensorboard --logdir=result/item/
 ```
+
+## Visualization
+
+### Word
+<p align="center">
+  <img src="images/item2vec-word.png" width="100%" />
+</p>
+
+### Item
+<p align="center">
+  <img src="images/item2vec-item.png" width="100%" />
+</p>
 
 ## Result
 
